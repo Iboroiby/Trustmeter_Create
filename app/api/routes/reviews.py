@@ -1,20 +1,24 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from app.db.session import get_db
-from app.schemas.review import ReviewCreate, ReviewOut
-from app.models.review import Review
-from app.models.listing import Listing
-from app.models.user import User
+from app.schemas.listing import ProductCreate
+from app.schemas.review import ReviewCreate, ReviewResponse
+from app.services.product_service import get_product_by_url, create_product
+from app.services.review_service import create_review
+from app.api.dependencies import get_db
 
 router = APIRouter()
 
-@router.post("/", response_model=ReviewOut)
-def create_review(review: ReviewCreate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    listing = db.query(Listing).filter(Listing.id == review.listing_id).first()
-    if not listing:
-        raise HTTPException(status_code=404, detail="Listing not found")
-    new_review = Review(**review.dict(), user_id=user.id, listing_id=listing.id)
-    db.add(new_review)
-    db.commit()
-    db.refresh(new_review)
-    return new_review
+@router.post("/reviews/", response_model=ReviewResponse)
+def create_review_for_product(
+    review: ReviewCreate,
+    product: ProductCreate,
+    db: Session = Depends(get_db)
+):
+    # Check or create product
+    db_product = get_product_by_url(db, product.url)
+    if not db_product:
+        db_product = create_product(db, product)
+
+    # Create review
+    review.product_id = db_product.id
+    return create_review(db, review)
